@@ -82,3 +82,16 @@ export interface AuthUser {
   photoURL?: string | null;
   isAdmin: boolean;
 }
+
+export interface BookingRecord {
+  id: string;
+  slotKey: string;
+  dateLabel: string;
+  time: string;
+  name: string;
+  email: string;
+  phone: string;
+  topic: string;
+  notes?: string;
+  createdAt: string;
+}

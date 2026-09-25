@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { sampleBookingSlots } from '../data/agencyData';
 import { Calendar as CalendarIcon, Clock, CheckCircle, ExternalLink, Shield, MessageCircle } from 'lucide-react';
-import { AgencyContactConfig } from '../types';
+import { AgencyContactConfig, BookingRecord } from '../types';
+import { submitClientInquiry, fetchBookings, saveBooking } from '../firebase/firestoreService';
 
 interface BookingSectionProps {
   agencyConfig: AgencyContactConfig;
@@ -18,6 +19,26 @@ export const BookingSection: React.FC<BookingSectionProps> = ({ agencyConfig }) 
     notes: ''
   });
   const [isBooked, setIsBooked] = useState(false);
+  const [bookedList, setBookedList] = useState<BookingRecord[]>([]);
+
+  // Load booked slots from Firestore & cache
+  useEffect(() => {
+    let isMounted = true;
+    const loadBookings = async () => {
+      try {
+        const records = await fetchBookings();
+        if (isMounted) {
+          setBookedList(records);
+        }
+      } catch (err) {
+        console.warn('Could not load bookings:', err);
+      }
+    };
+    loadBookings();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Generate next 6 weekdays starting tomorrow
   const days = [
@@ -28,6 +49,24 @@ export const BookingSection: React.FC<BookingSectionProps> = ({ agencyConfig }) 
     { day: 'Fri', date: '02 Oct', label: 'Friday, Oct 2' },
     { day: 'Mon', date: '05 Oct', label: 'Monday, Oct 5' }
   ];
+
+  // Auto-switch to an available slot if selected slot is already booked for this date
+  useEffect(() => {
+    const currentDay = days[selectedDateIndex];
+    if (!currentDay) return;
+
+    const currentSlotIsTaken = !sampleBookingSlots.find((s) => s.time === selectedTime)?.available ||
+      bookedList.some((b) => b.slotKey === `${currentDay.date}_${selectedTime}`);
+
+    if (currentSlotIsTaken) {
+      const firstAvailable = sampleBookingSlots.find((s) =>
+        s.available && !bookedList.some((b) => b.slotKey === `${currentDay.date}_${s.time}`)
+      );
+      if (firstAvailable) {
+        setSelectedTime(firstAvailable.time);
+      }
+    }
+  }, [selectedDateIndex, bookedList]);
 
   const topics = [
     'Full-Funnel Digital Growth Audit',
@@ -59,7 +98,48 @@ export const BookingSection: React.FC<BookingSectionProps> = ({ agencyConfig }) 
   const handleConfirmBooking = (e: React.FormEvent) => {
     e.preventDefault();
     if (!bookingForm.name || !bookingForm.email) return;
+
+    const currentDay = days[selectedDateIndex];
+    const slotKey = `${currentDay.date}_${selectedTime}`;
+
+    // Verify slot isn't already taken
+    if (bookedList.some((b) => b.slotKey === slotKey)) {
+      return;
+    }
+
     setIsBooked(true);
+
+    const newBookingData = {
+      slotKey,
+      dateLabel: currentDay.label,
+      time: selectedTime,
+      name: bookingForm.name,
+      email: bookingForm.email,
+      phone: bookingForm.phone || 'N/A',
+      topic: selectedTopic,
+      notes: bookingForm.notes || ''
+    };
+
+    // 1. Lock slot permanently in Database (Firestore bookings collection)
+    saveBooking(newBookingData).then((saved) => {
+      setBookedList((prev) => [saved, ...prev]);
+    }).catch((err) => {
+      console.warn('Booking database save notice:', err);
+    });
+
+    // 2. Also save to Inquiries collection for agency records
+    submitClientInquiry({
+      name: bookingForm.name,
+      email: bookingForm.email,
+      phone: bookingForm.phone || 'N/A',
+      serviceRequired: `Consultation: ${selectedTopic} (${currentDay.label} at ${selectedTime})`,
+      monthlyBudget: bookingForm.notes || 'Consultation Session',
+      message: `30-Minute Consultation Request: ${currentDay.label} at ${selectedTime}. Focus: ${selectedTopic}. Current Budget/Goal: ${bookingForm.notes || 'N/A'}`
+    }).catch((err) => {
+      console.warn('Booking inquiry save notice:', err);
+    });
+
+    // 3. Route directly to WhatsApp (+91 9789504702)
     const waUrl = getBookingWhatsAppUrl();
     try {
       const win = window.open(waUrl, '_blank', 'noopener,noreferrer');
@@ -73,7 +153,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({ agencyConfig }) 
         document.body.removeChild(link);
       }
     } catch {
-      // Handled via button
+      // Handled via confirmation button
     }
   };
 
@@ -202,24 +282,35 @@ export const BookingSection: React.FC<BookingSectionProps> = ({ agencyConfig }) 
                     <span>2. Select Time Window (EST / GMT / Local)</span>
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                    {sampleBookingSlots.map((slot, idx) => (
-                      <button
-                        type="button"
-                        key={idx}
-                        disabled={!slot.available}
-                        onClick={() => setSelectedTime(slot.time)}
-                        className={`p-3 rounded-xl border text-xs font-mono-data font-semibold transition-all ${
-                          !slot.available
-                            ? 'opacity-30 cursor-not-allowed bg-black/20 border-white/5 text-[#555555]'
-                            : selectedTime === slot.time
-                            ? 'bg-[#FFD966] text-[#080808] border-[#FFD966] shadow-[0_0_15px_rgba(255,217,102,0.3)]'
-                            : 'bg-black/40 text-[#D4D4D4] hover:text-white border-white/5 hover:border-white/20'
-                        }`}
-                      >
-                        <span>{slot.time}</span>
-                        {!slot.available && <span className="block text-[9px] text-red-400">Booked</span>}
-                      </button>
-                    ))}
+                    {sampleBookingSlots.map((slot, idx) => {
+                      const currentDay = days[selectedDateIndex];
+                      const slotKey = currentDay ? `${currentDay.date}_${slot.time}` : '';
+                      const isSlotBookedInDb = bookedList.some((b) => b.slotKey === slotKey);
+                      const isAvailable = slot.available && !isSlotBookedInDb;
+
+                      return (
+                        <button
+                          type="button"
+                          key={idx}
+                          disabled={!isAvailable}
+                          onClick={() => setSelectedTime(slot.time)}
+                          className={`p-3 rounded-xl border text-xs font-mono-data font-semibold transition-all relative ${
+                            !isAvailable
+                              ? 'opacity-40 cursor-not-allowed bg-black/40 border-red-500/20 text-[#666666]'
+                              : selectedTime === slot.time
+                              ? 'bg-[#FFD966] text-[#080808] border-[#FFD966] shadow-[0_0_15px_rgba(255,217,102,0.3)] font-bold'
+                              : 'bg-black/40 text-[#D4D4D4] hover:text-white border-white/5 hover:border-white/20'
+                          }`}
+                        >
+                          <span>{slot.time}</span>
+                          {!isAvailable && (
+                            <span className="block text-[9px] font-bold text-red-400 uppercase tracking-wider mt-0.5">
+                              Booked
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

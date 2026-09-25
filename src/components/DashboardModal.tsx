@@ -13,14 +13,17 @@ import {
   saveService,
   deleteServiceItem,
   fetchClientInquiries,
-  deleteInquiryItem
+  deleteInquiryItem,
+  fetchBookings,
+  deleteBookingItem
 } from '../firebase/firestoreService';
 import {
   AgencyContactConfig,
   CaseStudyItem,
   TestimonialItem,
   ServiceItem,
-  ClientInquiry
+  ClientInquiry,
+  BookingRecord
 } from '../types';
 import {
   X,
@@ -45,7 +48,8 @@ import {
   MessageCircle,
   Database,
   IndianRupee,
-  RefreshCw
+  RefreshCw,
+  Calendar
 } from 'lucide-react';
 
 interface DashboardModalProps {
@@ -55,7 +59,7 @@ interface DashboardModalProps {
   onDataChange?: () => void;
 }
 
-type TabType = 'home' | 'about' | 'why-zazu' | 'services' | 'process' | 'works' | 'reviews' | 'contact';
+type TabType = 'home' | 'about' | 'why-zazu' | 'services' | 'process' | 'works' | 'reviews' | 'bookings' | 'contact';
 
 export const DashboardModal: React.FC<DashboardModalProps> = ({
   isOpen,
@@ -72,6 +76,7 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
   const [reviews, setReviews] = useState<TestimonialItem[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [inquiries, setInquiries] = useState<ClientInquiry[]>([]);
+  const [bookingsList, setBookingsList] = useState<BookingRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -84,17 +89,19 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [cfg, w, r, s] = await Promise.all([
+      const [cfg, w, r, s, b] = await Promise.all([
         fetchSiteConfig(),
         fetchWorks(),
         fetchReviews(),
-        fetchServices()
+        fetchServices(),
+        fetchBookings()
       ]);
       setSiteConfig(cfg);
       setEditingAboutText(cfg.aboutVijayakumar || '');
       setWorks(w);
       setReviews(r);
       setServices(s);
+      setBookingsList(b);
 
       if (isAdmin) {
         try {
@@ -273,6 +280,25 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
     }
   };
 
+  const handleReleaseSlot = async (id: string, name: string, dateLabel: string, time: string) => {
+    if (!isAdmin) {
+      showFeedback('error', 'Only digitalmediazazu@gmail.com can release booked slots.');
+      return;
+    }
+    const confirmRelease = confirm(`Mark consultation with ${name} (${dateLabel} at ${time}) as completed and release the slot for new clients?`);
+    if (!confirmRelease) return;
+
+    try {
+      await deleteBookingItem(id, user?.email);
+      showFeedback('success', `Slot (${dateLabel} at ${time}) completed & released for new bookings!`);
+      const updated = await fetchBookings();
+      setBookingsList(updated);
+      onDataChange?.();
+    } catch (err: any) {
+      showFeedback('error', err.message || 'Failed to release slot');
+    }
+  };
+
   const tabs = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'about', label: 'About', icon: User },
@@ -281,6 +307,7 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
     { id: 'process', label: 'Process', icon: Layers },
     { id: 'works', label: 'Works', icon: FolderGit2 },
     { id: 'reviews', label: 'Reviews', icon: Star },
+    { id: 'bookings', label: 'Bookings', icon: Calendar },
     { id: 'contact', label: 'Contact', icon: Mail }
   ];
 
@@ -1045,7 +1072,101 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
               </div>
             )}
 
-            {/* 8. CONTACT & INQUIRIES TAB */}
+            {/* 8. BOOKINGS & CONSULTATION SLOTS TAB */}
+            {activeTab === 'bookings' && (
+              <div className="space-y-6 max-w-4xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+                  <div>
+                    <h3 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-[#F5C542]" />
+                      <span>Consultation Bookings & Slot Control</span>
+                    </h3>
+                    <p className="text-xs text-[#A0A0A0] mt-1">
+                      Manage reserved 30-minute consultation appointments. When a meeting is completed or cancelled, click <strong>"Complete & Release Slot"</strong> to immediately reopen that date & time for new clients on the website.
+                    </p>
+                  </div>
+                  <div className="shrink-0 px-3 py-1.5 rounded-lg bg-[#F5C542]/10 border border-[#F5C542]/30 text-[#FFD966] text-xs font-mono">
+                    {bookingsList.length} Reserved {bookingsList.length === 1 ? 'Slot' : 'Slots'}
+                  </div>
+                </div>
+
+                {bookingsList.length === 0 ? (
+                  <div className="p-10 rounded-2xl bg-[#111111] border border-white/5 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-[#F5C542]/10 border border-[#F5C542]/30 flex items-center justify-center text-[#F5C542] mx-auto">
+                      <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-sm font-bold text-white">All Consultation Slots Are Free</h4>
+                    <p className="text-xs text-[#777777] max-w-md mx-auto">
+                      There are currently no active locked bookings. When a client books a slot on the website, it will appear here and lock that time for all other visitors until you mark it completed.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {bookingsList.map((b) => (
+                      <div
+                        key={b.id}
+                        className="p-5 rounded-2xl bg-[#111111] border border-white/10 hover:border-[#F5C542]/40 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-lg"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-2.5 py-1 rounded-md bg-[#F5C542]/15 border border-[#F5C542]/40 text-[#FFD966] text-xs font-mono font-bold">
+                              📅 {b.dateLabel} at {b.time}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-red-500/10 text-red-400 border border-red-500/20">
+                              Locked on Site
+                            </span>
+                          </div>
+
+                          <div>
+                            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                              <span>{b.name}</span>
+                              <span className="text-xs font-normal text-[#A0A0A0]">({b.topic})</span>
+                            </h4>
+                            {b.notes && (
+                              <p className="text-xs text-[#D4D4D4] mt-1 bg-black/40 p-2 rounded-lg border border-white/5">
+                                <strong className="text-white">Client Goal / Budget:</strong> {b.notes}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-4 text-[11px] text-[#888888] pt-1">
+                            <span>📞 {b.phone}</span>
+                            <span>✉️ {b.email}</span>
+                            <span>Booked on: {new Date(b.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-white/5">
+                          <a
+                            href={`https://wa.me/${b.phone.replace(/\D/g, '') || '919789504702'}?text=${encodeURIComponent(`Hi ${b.name}, this is Vijayakumar from ZAZU Digital Media regarding our scheduled consultation for ${b.dateLabel} at ${b.time}.`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-[#080808] font-bold text-xs flex items-center gap-1.5 transition-all shadow-md"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                            <span>WhatsApp Client</span>
+                          </a>
+
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleReleaseSlot(b.id, b.name, b.dateLabel, b.time)}
+                              className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-[#FFD966] hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
+                              title="Mark consultation as finished and reopen this slot for new bookings"
+                            >
+                              <CheckCircle2 className="w-4 h-4 text-[#F5C542]" />
+                              <span>Complete & Release Slot</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 9. CONTACT & INQUIRIES TAB */}
             {activeTab === 'contact' && (
               <div className="space-y-6 max-w-4xl">
                 <div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, CheckCircle, Calculator, ArrowUpRight, MessageCircle } from 'lucide-react';
 import { servicesData } from '../data/agencyData';
+import { submitClientInquiry } from '../firebase/firestoreService';
 
 interface QuoteModalProps {
   isOpen: boolean;
@@ -44,6 +45,19 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitted(true);
+
+    // Save to Database (Firestore & Local Cache)
+    submitClientInquiry({
+      name: contactInfo.name || 'Anonymous',
+      email: contactInfo.email,
+      phone: contactInfo.phone || 'N/A',
+      serviceRequired: `Quote Scope: ${selectedServices.join(', ')}`,
+      monthlyBudget: timeline,
+      message: `Quote Request for: ${selectedServices.join(', ')}. Target Timeline: ${timeline}`
+    }).catch((err) => {
+      console.warn('Quote database save notice:', err);
+    });
+
     const waUrl = getWhatsAppQuoteUrl();
     try {
       const win = window.open(waUrl, '_blank', 'noopener,noreferrer');

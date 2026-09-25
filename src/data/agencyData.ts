@@ -396,7 +396,7 @@ export const sampleBookingSlots = [
   { time: '09:00 AM', available: true },
   { time: '10:30 AM', available: true },
   { time: '01:00 PM', available: true },
-  { time: '02:30 PM', available: false },
+  { time: '02:30 PM', available: true },
   { time: '04:00 PM', available: true },
   { time: '05:30 PM', available: true }
 ];

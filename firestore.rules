@@ -41,6 +41,12 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // Booked slots / Consultations (read by public to display availability, create by public, manage by admin)
+    match /bookings/{bookingId} {
+      allow read, create: if true;
+      allow update, delete: if isAdmin();
+    }
+
     // User profiles (users can read/write their own profile, admin can read all)
     match /users/{userId} {
       allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());

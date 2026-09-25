@@ -11,6 +11,7 @@ import { auth, googleProvider } from '../firebase/config';
 import { AuthUser } from '../types';
 
 export const ADMIN_EMAIL = 'digitalmediazazu@gmail.com';
+export const ADMIN_EMAILS = ['digitalmediazazu@gmail.com', 'elae2379@gmail.com'];
 export const ADMIN_DEFAULT_PASSWORD = 'digitalmedia';
 
 interface AuthContextType {
@@ -52,8 +53,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const formatUser = (rawUser: { uid: string; email: string | null; displayName: string | null; photoURL?: string | null }): AuthUser => {
-    const email = rawUser.email || '';
-    const isAdmin = email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const email = (rawUser.email || '').trim().toLowerCase();
+    const isAdmin = ADMIN_EMAILS.some((adm) => adm.toLowerCase() === email);
     return {
       uid: rawUser.uid,
       email: rawUser.email,

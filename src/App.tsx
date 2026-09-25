@@ -36,8 +36,10 @@ function MainApp() {
   const [dashboardInitialTab, setDashboardInitialTab] = useState('home');
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
   const [preloadedService, setPreloadedService] = useState('Digital Marketing');
+  const [dataVersion, setDataVersion] = useState(0);
 
   const refreshData = async () => {
+    setDataVersion((v) => v + 1);
     try {
       const [cfg, works, reviews, services] = await Promise.all([
         fetchSiteConfig(),
@@ -124,7 +126,7 @@ function MainApp() {
       />
 
       {/* 9. Consultation Booking */}
-      <BookingSection agencyConfig={agencyConfig} />
+      <BookingSection key={dataVersion} agencyConfig={agencyConfig} />
 
       {/* 10. Contact Section & Direct Messaging to 9789504702 */}
       <ContactSection

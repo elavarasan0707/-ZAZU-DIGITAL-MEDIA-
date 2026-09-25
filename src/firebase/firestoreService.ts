@@ -11,13 +11,14 @@ import {
   orderBy
 } from 'firebase/firestore';
 import { db } from './config';
-import { CaseStudyItem, TestimonialItem, ServiceItem, AgencyContactConfig, ClientInquiry } from '../types';
+import { CaseStudyItem, TestimonialItem, ServiceItem, AgencyContactConfig, ClientInquiry, BookingRecord } from '../types';
 import { initialAgencyConfig, caseStudiesData, testimonialsData, servicesData } from '../data/agencyData';
 
-const ADMIN_EMAIL = 'digitalmediazazu@gmail.com';
+const ADMIN_EMAILS = ['digitalmediazazu@gmail.com', 'elae2379@gmail.com'];
 
 export const isUserAdmin = (email?: string | null): boolean => {
-  return (email || '').trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  if (!email) return false;
+  return ADMIN_EMAILS.some((adm) => adm.toLowerCase() === email.trim().toLowerCase());
 };
 
 // ---------------- SITE CONFIG ----------------
@@ -349,4 +350,64 @@ export const deleteInquiryItem = async (inquiryId: string, userEmail?: string | 
   const current = getLocalInquiries();
   const updated = current.filter((i) => i.id !== inquiryId);
   localStorage.setItem('zazu_inquiries_cache', JSON.stringify(updated));
+};
+
+// ---------------- BOOKINGS & CONSULTATION SLOTS ----------------
+export const fetchBookings = async (): Promise<BookingRecord[]> => {
+  try {
+    const q = query(collection(db, 'bookings'), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRecord));
+      localStorage.setItem('zazu_bookings_cache', JSON.stringify(items));
+      return items;
+    }
+  } catch (err) {
+    console.warn('Firestore fetchBookings fallback:', err);
+  }
+  try {
+    const saved = localStorage.getItem('zazu_bookings_cache');
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveBooking = async (booking: Omit<BookingRecord, 'id' | 'createdAt'>): Promise<BookingRecord> => {
+  const fullBooking: BookingRecord = {
+    id: `booking-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    ...booking
+  };
+
+  try {
+    const docRef = await addDoc(collection(db, 'bookings'), {
+      ...booking,
+      createdAt: fullBooking.createdAt
+    });
+    fullBooking.id = docRef.id;
+  } catch (err) {
+    console.warn('Firestore saveBooking fallback locally:', err);
+  }
+
+  // Update local cache
+  const current = await fetchBookings();
+  const updated = [fullBooking, ...current.filter((b) => b.slotKey !== fullBooking.slotKey)];
+  localStorage.setItem('zazu_bookings_cache', JSON.stringify(updated));
+
+  return fullBooking;
+};
+
+export const deleteBookingItem = async (bookingId: string, userEmail?: string | null): Promise<void> => {
+  if (!isUserAdmin(userEmail)) {
+    throw new Error('Unauthorized: Only digitalmediazazu@gmail.com can delete bookings.');
+  }
+  try {
+    await deleteDoc(doc(db, 'bookings', bookingId));
+  } catch (err) {
+    console.warn('Firestore deleteBooking error:', err);
+  }
+  const current = await fetchBookings();
+  const updated = current.filter((b) => b.id !== bookingId);
+  localStorage.setItem('zazu_bookings_cache', JSON.stringify(updated));
 };

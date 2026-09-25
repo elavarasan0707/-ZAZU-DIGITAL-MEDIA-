@@ -77,6 +77,23 @@
         "createdAt": { "type": "string" }
       },
       "required": ["name", "email", "message"]
+    },
+    "booking": {
+      "title": "Consultation Booking",
+      "description": "Reserved 30-minute consultation slots",
+      "type": "object",
+      "properties": {
+        "slotKey": { "type": "string" },
+        "dateLabel": { "type": "string" },
+        "time": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "topic": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["slotKey", "dateLabel", "time", "name", "email"]
     }
   },
   "firestore": {
@@ -99,6 +116,10 @@
     "/inquiries/{inquiryId}": {
       "schema": "inquiry",
       "description": "Client contact submissions and quotes"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "booking",
+      "description": "Reserved consultation appointments"
     }
   }
 }
